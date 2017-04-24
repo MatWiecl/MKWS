@@ -1,0 +1,175 @@
+import sys
+import numpy as np
+from cantera import *
+from matplotlib.pylab import *
+import csv
+
+gas= Solution('gri30.xml')
+
+#Keybord input
+Tmin=float(raw_input('Tmin= [k]'))  
+Tmax=float(raw_input('Tmax= [k]'))
+Pmin=int(raw_input('Pmin= [Pa]'))
+Pmax=int(raw_input('Pmax= [Pa]'))
+fimin=float(raw_input('fimin= ')) 
+fimax=float(raw_input('fimax= ')) 
+
+#Number of iterations
+npoints=10          #Temperature and pressure
+fipoints=10         #Fi
+
+s=0
+nt=100000
+dt=10**(-6)
+
+#Creating lists for data storage
+Ti=np.zeros(npoints,'d')
+Ti2=np.zeros(npoints, 'd')
+Pi=np.zeros(npoints,'d')
+fi=np.zeros(fipoints,'d')
+tim=np.zeros(nt,'d')
+temp_cas=np.zeros(nt,'d')
+dtemp_cas=np.zeros(nt-1,'d')
+Autoignition_cas=np.zeros(npoints**2*fipoints,'d')
+FinalTemp_cas=np.zeros(npoints**2*fipoints,'d')
+mfrac_cas=np.zeros([npoints,gas.n_species],'d')
+
+#Lists for plots
+Autoignition_casTemp=np.zeros(npoints,'d')
+FinalTemp_casTemp=np.zeros(npoints,'d')
+Autoignition_casPressure=np.zeros(npoints,'d')
+FinalTemp_casPressure=np.zeros(npoints,'d')
+Autoignition_casFi=np.zeros(fipoints,'d')
+FinalTemp_casFi=np.zeros(fipoints,'d')
+
+for j in range(npoints):
+    Ti[j]=Tmin +(Tmax-Tmin)*j/(npoints-1)
+    Ti2[j]=1000/Ti[j]
+    
+    for p in range(npoints):
+        Pi[p]=Pmin+(Pmax-Pmin)*p/(npoints-1)
+	
+	for f in range(fipoints):
+            fi[f]=fimin+(fimax-fimin)*f/(fipoints-1)
+            no=float(1/fi[f])         #Number of O2 moles
+            nn=float(3.76/fi[f])      #Number of N2 moles
+            X='CH4:0.5 O2:'+str(no)+' N2:'+str(nn)
+            gas.TPX=Ti[j],Pi[p],X
+            r=IdealGasReactor(gas)
+            sim=ReactorNet([r])
+            time=0.0
+
+#Catching the autoignition timing
+            for n in range(nt):
+                time += dt
+                sim.advance(time)
+                tim[n]=time
+                temp_cas[n]=r.T
+            mfrac_cas[j][:]=r.thermo.Y
+
+            Dtmax=[0,0.0]
+            for n in range(nt-1):
+                dtemp_cas[n]=(temp_cas[n+1]-temp_cas[n])/dt
+                if (dtemp_cas[n]>Dtmax[1]):
+                    Dtmax[0]=n
+                    Dtmax[1]=dtemp_cas[n]
+            Autoignition=(tim[Dtmax[0]]+tim[Dtmax[0]+1])/2.
+
+#Print is cut out in order not to spam. Delete '#' if needed.
+
+      #      print 'For T=' +str(Ti[j]) +'K P=' +str(Pi[p])+'Pa and fi='+str(fi[f]) +', Autoignition time= (s) ' +str(Autoignition)   
+
+            Autoignition_cas[s]=Autoignition*1000
+            FinalTemp_cas[s]=temp_cas[nt-1]
+            s+=1
+
+#Saving data for plots
+            if Pi[p]==101325 and fi[f]==1:
+                FinalTemp_casTemp[j]=temp_cas[nt-1]
+                Autoignition_casTemp[j]=Autoignition*1000
+            if Ti[j]==1300 and fi[f]==1:
+                FinalTemp_casPressure[p]=temp_cas[nt-1]
+                Autoignition_casPressure[p]=Autoignition*1000
+            if Pi[p]==101325 and Ti[j]==1300:
+                FinalTemp_casFi[f]=temp_cas[nt-1]
+                Autoignition_casFi[f]=Autoignition*1000
+
+
+
+#Data import to csv file        
+s=0
+csv_file='AutoignitionPROPER.csv'
+with open(csv_file,'w') as outfile:
+    writer=csv.writer(outfile)
+    writer.writerow(['Initial temperature','Pressure','Fi','Autoignition time','Final Temperature'])
+    for i in range(npoints):
+        writer.writerow([Ti[i]])
+        for n in range(npoints):
+            writer.writerow(['',Pi[n]])
+            for k in range(fipoints):
+                writer.writerow(['','',fi[k], Autoignition_cas[s],FinalTemp_cas[s]])
+                s+=1
+
+print 'output written to ' +csv_file
+
+#PLOTS
+
+#Autoign_time(InitialTemp)
+
+plot(Ti,Autoignition_casTemp,'-',color='orange')
+xlabel(r'Temp [K]',fontsize=20)
+ylabel("Autoignition [ms]")
+title(r'Autoignition of $CH_{4}$ + P=1atm + Air mixture at $\Phi$=1', fontsize=22,horizontalalignment='center')
+axis([900,2000,0.0,100.0])
+grid()
+savefig('Autoign_inittemp2.png',bbox_inches='tight')
+
+#FinalTemp(InitialTemp)
+
+plot(Ti,FinalTemp_casTemp,'-',color='orange')
+xlabel(r'Temp [K]',fontsize=20)
+ylabel("FinalTemp [K]")
+title(r'Autoignition of $CH_{4}$ + P=1atm + Air mixture at $\Phi$=1', fontsize=22,horizontalalignment='center')
+axis([900,1800,2400,3200])
+grid()
+savefig('Finaltemp_temp2.png',bbox_inches='tight')
+
+#Autoign_time(pressure)
+
+plot(Pi,Autoignition_casPressure,'-',color='orange')
+xlabel(r'Pressure [Pa]',fontsize=20)
+ylabel("Autoignition [ms]")
+title(r'Autoignition of $CH_{4}$ + T=1300K + Air mixture at $\Phi$=1', fontsize=22,horizontalalignment='center')
+axis([100000,420000,0.0,40])
+grid()
+savefig('Autoign_pressure2.png',bbox_inches='tight')
+
+#FinalTemp(pressure)
+
+plot(Pi,FinalTemp_casPressure,'-',color='orange')
+xlabel(r'Pressure [Pa]',fontsize=20)
+ylabel("Final Temp[K]")
+title(r'Autoignition of $CH_{4}$ + T=1300K + Air mixture at $\Phi$=1', fontsize=22,horizontalalignment='center')
+axis([100000,420000,2600,3200])
+grid()
+savefig('Finaltemp_pressure2.png',bbox_inches='tight')
+
+#Autoign_time(Fi)
+
+plot(fi,Autoignition_casFi,'-',color='orange')
+xlabel(r'Fi',fontsize=20)
+ylabel("Autoignition [ms]")
+title(r'Autoignition of $CH_{4}$ + P=1atm + T=1300K', fontsize=22,horizontalalignment='center')
+axis([0.2,4,0.0,40])
+grid()
+savefig('Autoign_fi2.png',bbox_inches='tight')
+
+#FinalTemp(Fi)
+
+plot(fi,FinalTemp_casFi,'-',color='orange')
+xlabel(r'Fi',fontsize=20)
+ylabel("Final Temp[K]")
+title(r'Autoignition of $CH_{4}$ + P=1atm + T=1300K', fontsize=22,horizontalalignment='center')
+axis([0.2,4,1500,3200])
+grid()
+savefig('Finaltemp_fi2.png',bbox_inches='tight')
